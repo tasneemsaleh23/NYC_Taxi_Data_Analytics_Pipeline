@@ -33,7 +33,7 @@ cd big-Data-project
 ```
 
 ### 2. Add your raw data
-Place your `.parquet` dataset files inside the `./dataset/` folder (this folder is ignored by Git):
+Place your `.parquet` dataset files inside the `./dataset/` folder (you create it):
 ```
 big-Data-project/
 └── dataset/
