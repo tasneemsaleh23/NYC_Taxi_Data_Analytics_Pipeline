@@ -1,0 +1,27 @@
+# =============================================================================
+# requirements.txt — Python packages for the Streamlit container
+# NYC Taxi Big Data Pipeline
+# =============================================================================
+
+
+# PyHive — connects Python to HiveServer2 over JDBC/Thrift
+pyhive[hive]==0.7.0
+
+# Thrift transport libraries required by PyHive
+# FIX: sasl==0.3.1 fails to compile on python:3.11-slim without gcc headers.
+# We install gcc + libsasl2-dev in docker-compose.yml command before pip install.
+thrift==0.16.0
+thrift-sasl==0.4.3
+sasl==0.3.1
+
+# Data manipulation
+pandas==2.2.2
+
+# Visualisation (interactive charts inside Streamlit)
+plotly==5.22.0
+
+# DB API interface used by pyhive
+SQLAlchemy==2.0.30
+
+# Retry logic for Hive connection
+tenacity==8.2.3

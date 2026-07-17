@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  hive-site.xml — Shared Hive configuration
+  ============================================
+  Mounted into:
+    - hive-metastore container  → /opt/hive/conf/hive-site.xml
+    - hive-server container     → /opt/hive/conf/hive-site.xml
+    - spark-master container    → /opt/spark/conf/hive-site.xml
+    - spark-worker container    → /opt/spark/conf/hive-site.xml
+
+  Key wiring:
+    Spark / HiveServer2 → Thrift Metastore on hive-metastore:9083
+    Hive Metastore      → PostgreSQL JDBC on postgres:5432
+-->
+<configuration>
+
+  <!-- ================================================================
+       METASTORE THRIFT URI
+       Spark and HiveServer2 both connect to the metastore via Thrift.
+       "hive-metastore" = Docker Compose service name for the metastore.
+       ================================================================ -->
+  <property>
+    <name>hive.metastore.uris</name>
+    <value>thrift://hive-metastore:9083</value>
+  </property>
+
+  <!-- ================================================================
+       POSTGRESQL JDBC CONNECTION (used by the metastore service only)
+       ================================================================ -->
+  <property>
+    <name>javax.jdo.option.ConnectionURL</name>
+    <value>jdbc:postgresql://postgres:5432/metastore_db</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionDriverName</name>
+    <value>org.postgresql.Driver</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionUserName</name>
+    <value>hive</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionPassword</name>
+    <value>hive_password</value>
+  </property>
+
+  <!-- ================================================================
+       WAREHOUSE DIRECTORY
+       ================================================================ -->
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>/opt/hive/warehouse</value>
+  </property>
+
+  <!-- ================================================================
+       SCHEMA VERIFICATION — disable to prevent version mismatch errors
+       ================================================================ -->
+  <property>
+    <name>hive.metastore.schema.verification</name>
+    <value>false</value>
+  </property>
+
+  <!-- ================================================================
+       DYNAMIC PARTITIONS
+       ================================================================ -->
+  <property>
+    <name>hive.exec.dynamic.partition</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>hive.exec.dynamic.partition.mode</name>
+    <value>nonstrict</value>
+  </property>
+
+  <!-- ================================================================
+       SCRATCH DIR
+       ================================================================ -->
+  <property>
+    <name>hive.exec.scratchdir</name>
+    <value>/tmp/hive-scratch</value>
+  </property>
+
+  <!-- ================================================================
+       DISABLE NOTIFICATION API AUTH TO ALLOW HIVESERVER2
+       ================================================================ -->
+  <property>
+    <name>hive.metastore.event.db.notification.api.auth</name>
+    <value>false</value>
+  </property>
+
+  <!-- ================================================================
+       HIVESERVER2 AUTHENTICATION
+       ================================================================ -->
+  <property>
+    <name>hive.server2.authentication</name>
+    <value>NOSASL</value>
+  </property>
+
+</configuration>

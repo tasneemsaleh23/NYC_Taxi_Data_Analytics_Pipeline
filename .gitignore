@@ -1,0 +1,46 @@
+# =============================================
+# NYC Taxi Big Data Pipeline — .gitignore
+# =============================================
+
+# --- Raw data files ---
+data/
+dataset/
+*.csv
+*.parquet
+*.orc
+
+# --- Logs ---
+*.log
+*logs.txt
+
+# --- Environment / secrets ---
+.env
+.env.*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# --- Outputs / Generated ---
+python_app/output.html
+New folder/
+
+# --- Docker / OS temp files ---
+.DS_Store
+Thumbs.db
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
