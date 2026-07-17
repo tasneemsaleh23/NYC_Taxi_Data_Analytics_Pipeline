@@ -54,7 +54,7 @@ flowchart LR
 ```text
 .
 ├── docker-compose.yml       # Defines the multi-container architecture (Spark, Hive, Postgres, Python App)
-├── dataset/                 # Directory containing the raw NYC TLC Parquet files
+├── data/                    # Directory containing the raw NYC TLC Parquet files
 ├── hive_setup/              # Configuration files for Hive and Spark-Hive integration
 │   ├── create_tables.hql    # HiveQL script for schema definitions
 │   ├── hive-site.xml        # Core Hive configuration
