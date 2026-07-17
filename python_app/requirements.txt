@@ -1,0 +1,27 @@
+# =============================================================================
+# requirements.txt — Python packages for the Flask dashboard container
+# NYC Taxi Big Data Pipeline
+# =============================================================================
+
+# PyHive — connects Python to HiveServer2 over Thrift
+# auth="NOSASL" means no C-compiled sasl needed; pure-sasl is sufficient.
+pyhive==0.7.0
+
+# Thrift transport libraries required by PyHive
+thrift==0.16.0
+pure-sasl==0.6.2
+
+# Data manipulation
+pandas==2.2.2
+
+# Plotly — used server-side to serialise chart data to JSON for the frontend
+plotly==5.22.0
+
+# Flask web server
+flask==3.0.3
+
+# DB API interface used by pyhive
+SQLAlchemy==2.0.30
+
+# Retry logic for Hive connection
+tenacity==8.2.3

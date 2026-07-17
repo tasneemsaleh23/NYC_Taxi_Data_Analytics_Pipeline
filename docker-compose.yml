@@ -1,0 +1,209 @@
+# =============================================================================
+# NYC Taxi Big Data Pipeline — Docker Compose Environment
+# Stack: Spark 3.5 | Hive 3.1 | PostgreSQL 13 | Streamlit | Python 3.11
+# =============================================================================
+#
+# SERVICE URLS (open in browser):
+#   Spark Master UI   →  http://localhost:8090
+#   Spark Worker UI   →  http://localhost:8081
+#   HiveServer2 UI    →  http://localhost:10002
+#   Flask Dashboard   →  http://localhost:8501
+# =============================================================================
+
+name: nyctaxi
+
+volumes:
+  postgres_data:
+  hive_warehouse:
+
+networks:
+  bigdatanet:
+    driver: bridge
+    name: bigdatanet
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # 1. POSTGRES — Hive Metastore backend (PostgreSQL 13 required for Hive 3.1.3
+  #    JDBC driver compatibility — DO NOT upgrade to 15+)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:13
+    container_name: nycpostgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: metastore_db
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bigdatanet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive -d metastore_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # 2. HIVE METASTORE — Thrift Metastore service (port 9083)
+  # ---------------------------------------------------------------------------
+  hive-metastore:
+    image: apache/hive:3.1.3
+    container_name: nychivemetastore
+    hostname: hive-metastore
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      # IS_RESUME=true → skip schematool -initSchema (safe for restarts).
+      # datanucleus.schema.autoCreateAll=true in hive-site.xml handles fresh volumes.
+      IS_RESUME: "true"
+      HIVE_METASTORE_DB_HOST: postgres
+      HIVE_METASTORE_DB_PORT: "5432"
+      HIVE_METASTORE_DB_NAME: metastore_db
+      HIVE_METASTORE_DB_USER: hive
+      HIVE_METASTORE_DB_PASS: hive_password
+      HIVE_WAREHOUSE_DIR: /opt/hive/warehouse
+    volumes:
+      - hive_warehouse:/opt/hive/warehouse
+      - ./hive_setup/hive-site.xml:/opt/hive/conf/hive-site.xml
+      - ./hive_setup/postgresql-42.7.3.jar:/opt/hive/lib/postgresql-9.4.1208.jre7.jar:ro
+    ports:
+      - "9083:9083"
+    networks:
+      - bigdatanet
+    healthcheck:
+      # Simple TCP port check to break the deadlock: Metastore reports healthy once port is open,
+      # allowing HiveServer2 to connect and trigger the database table auto-creation.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/9083' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # 3. HIVE SERVER — HiveServer2 (ports 10000 JDBC + 10002 Web UI)
+  # ---------------------------------------------------------------------------
+  hive-server:
+    image: apache/hive:3.1.3
+    container_name: nychiveserver
+    hostname: hive-server
+    restart: unless-stopped
+    depends_on:
+      hive-metastore:
+        condition: service_healthy
+    environment:
+      SERVICE_NAME: hiveserver2
+      DB_DRIVER: postgres
+      IS_RESUME: "true"
+      HIVE_METASTORE_DB_HOST: postgres
+      HIVE_METASTORE_DB_PORT: "5432"
+      HIVE_METASTORE_DB_NAME: metastore_db
+      HIVE_METASTORE_DB_USER: hive
+      HIVE_METASTORE_DB_PASS: hive_password
+      HIVE_WAREHOUSE_DIR: /opt/hive/warehouse
+      METASTORE_URI: thrift://hive-metastore:9083
+    volumes:
+      - hive_warehouse:/opt/hive/warehouse
+      - ./hive_setup:/database_scripts
+      - ./dataset:/dataset:ro
+      - ./hive_setup/hive-site.xml:/opt/hive/conf/hive-site.xml
+      - ./hive_setup/postgresql-42.7.3.jar:/opt/hive/lib/postgresql-9.4.1208.jre7.jar:ro
+    ports:
+      - "10000:10000"
+      - "10002:10002"
+    networks:
+      - bigdatanet
+    healthcheck:
+      # Confirms HiveServer2 is actually accepting JDBC queries, not just that
+      # the process started. beeline exits 0 only on a successful connection.
+      test: ["CMD-SHELL", "beeline -u 'jdbc:hive2://localhost:10000/;auth=noSasl' -n hive -e 'SHOW DATABASES;' > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 10
+      start_period: 90s
+
+  # ---------------------------------------------------------------------------
+  # 4. SPARK MASTER
+  # ---------------------------------------------------------------------------
+  spark-master:
+    image: apache/spark:3.5.0
+    container_name: nycsparkmaster
+    restart: unless-stopped
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    environment:
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: 7077
+      SPARK_MASTER_WEBUI_PORT: 8090
+      SPARK_CONF_DIR: /opt/spark/conf
+    volumes:
+      - ./spark_job:/app
+      - ./dataset:/dataset
+      - hive_warehouse:/opt/hive/warehouse
+      - ./hive_setup/spark-hive-site.xml:/opt/spark/conf/hive-site.xml:ro
+    ports:
+      - "8090:8090"
+      - "7077:7077"
+    networks:
+      - bigdatanet
+
+  # ---------------------------------------------------------------------------
+  # 5. SPARK WORKER
+  # ---------------------------------------------------------------------------
+  spark-worker:
+    image: apache/spark:3.5.0
+    container_name: nycsparkworker
+    restart: unless-stopped
+    depends_on:
+      - spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_WEBUI_PORT: 8081
+    volumes:
+      - ./spark_job:/app
+      - ./dataset:/dataset
+      - hive_warehouse:/opt/hive/warehouse
+      - ./hive_setup/spark-hive-site.xml:/opt/spark/conf/hive-site.xml:ro
+    ports:
+      - "8081:8081"
+    networks:
+      - bigdatanet
+
+  # ---------------------------------------------------------------------------
+  # 6. PYTHON APP — Flask dashboard (deps pre-installed at build time)
+  # ---------------------------------------------------------------------------
+  python-app:
+    build:
+      context: ./python_app
+      dockerfile: Dockerfile
+    image: nycpythonappimage
+    container_name: nycpythonapp
+    restart: unless-stopped
+    depends_on:
+      hive-server:
+        condition: service_healthy
+    working_dir: /app
+    environment:
+      HIVE_HOST: hive-server
+      HIVE_PORT: "10000"
+      HIVE_DATABASE: nyc_taxi
+      FLASK_PORT: "8501"
+    volumes:
+      - ./python_app:/app
+    ports:
+      - "8501:8501"
+    networks:
+      - bigdatanet
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8501/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

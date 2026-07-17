@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NYC Taxi Analytics — Live Dashboard</title>
+  <meta name="description" content="Live NYC Taxi big-data analytics dashboard powered by Apache Hive, Spark and Flask." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Plotly.js (CDN — no extra Python dep) -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
+  <style>
+    /* ── RESET & BASE ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deep:    #04040f;
+      --bg-surface: #0d0d1f;
+      --glass:      rgba(255,255,255,0.045);
+      --glass-hover:rgba(255,255,255,0.08);
+      --border:     rgba(255,255,255,0.09);
+      --accent-1:   #a78bfa;
+      --accent-2:   #60a5fa;
+      --accent-3:   #34d399;
+      --accent-4:   #f472b6;
+      --text-hi:    #f1f5f9;
+      --text-mid:   #94a3b8;
+      --text-lo:    #475569;
+      --radius:     16px;
+      --radius-sm:  10px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-deep);
+      color: var(--text-hi);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── ANIMATED BACKGROUND BLOBS ────────────────────────────────────── */
+    .bg-blobs {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      overflow: hidden;
+    }
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.18;
+      animation: drift 20s ease-in-out infinite alternate;
+    }
+    .blob-1 { width:600px; height:600px; background:#7c3aed; top:-200px; left:-150px; animation-delay:0s; }
+    .blob-2 { width:500px; height:500px; background:#2563eb; top:30%; right:-100px; animation-delay:-7s; }
+    .blob-3 { width:400px; height:400px; background:#059669; bottom:-100px; left:30%; animation-delay:-14s; }
+    @keyframes drift {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(40px, 30px) scale(1.08); }
+    }
+
+    /* ── LAYOUT ────────────────────────────────────────────────────────── */
+    .wrapper {
+      position: relative; z-index: 1;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    /* ── HEADER ────────────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .brand { display:flex; align-items:center; gap:14px; }
+    .brand-icon {
+      width: 48px; height: 48px; border-radius: 14px;
+      background: linear-gradient(135deg, #7c3aed, #2563eb);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 24px rgba(124,58,237,0.5);
+    }
+    .brand-text h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.5px; }
+    .brand-text p  { font-size: 0.78rem; color: var(--text-mid); margin-top: 2px; }
+    .live-badge {
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(52,211,153,0.12);
+      border: 1px solid rgba(52,211,153,0.25);
+      color: #34d399; font-size: 0.75rem; font-weight: 600;
+      padding: 6px 14px; border-radius: 100px;
+    }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #34d399;
+      animation: pulse 2s ease infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:0.4; transform:scale(0.7); }
+    }
+
+    /* ── GLASS CARD ────────────────────────────────────────────────────── */
+    .card {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      backdrop-filter: blur(20px);
+      transition: background 0.25s, box-shadow 0.25s;
+    }
+    .card:hover {
+      background: var(--glass-hover);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.35);
+    }
+
+    /* ── KPI STAT CARDS GRID ───────────────────────────────────────────── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      padding: 28px 24px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      transition: transform 0.25s, box-shadow 0.25s;
+    }
+    .kpi-card::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, var(--kpi-color-a), var(--kpi-color-b));
+      opacity: 0.12;
+      pointer-events: none;
+    }
+    .kpi-card:hover { transform: translateY(-4px); box-shadow: 0 16px 48px rgba(0,0,0,0.4); }
+
+    .kpi-card.c1 { --kpi-color-a:#7c3aed; --kpi-color-b:#a78bfa; }
+    .kpi-card.c2 { --kpi-color-a:#1d4ed8; --kpi-color-b:#60a5fa; }
+    .kpi-card.c3 { --kpi-color-a:#047857; --kpi-color-b:#34d399; }
+    .kpi-card.c4 { --kpi-color-a:#be185d; --kpi-color-b:#f472b6; }
+
+    .kpi-icon {
+      width: 42px; height: 42px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--kpi-color-a), var(--kpi-color-b));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; margin-bottom: 16px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+    .kpi-label {
+      font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-mid);
+      margin-bottom: 6px;
+    }
+    .kpi-value {
+      font-size: 2rem; font-weight: 800; letter-spacing: -1px;
+      background: linear-gradient(135deg, var(--kpi-color-a), var(--kpi-color-b));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ── CHARTS GRID ───────────────────────────────────────────────────── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    .charts-row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 768px) {
+      .charts-row-2 { grid-template-columns: 1fr; }
+    }
+
+    .chart-card { padding: 24px; }
+    .chart-title {
+      font-size: 0.9rem; font-weight: 700; color: var(--text-hi);
+      margin-bottom: 16px; letter-spacing: -0.2px;
+    }
+    .plotly-chart { width: 100%; height: 340px; }
+
+    /* ── SECTION HEADING ───────────────────────────────────────────────── */
+    .section-heading {
+      font-size: 1.1rem; font-weight: 700; color: var(--text-hi);
+      margin: 40px 0 20px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-heading::after {
+      content: '';
+      flex: 1; height: 1px;
+      background: var(--border);
+    }
+
+    /* ── MONTHLY TABLE ─────────────────────────────────────────────────── */
+    .table-wrapper { overflow-x: auto; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 0.84rem;
+    }
+    thead tr {
+      background: rgba(255,255,255,0.04);
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      padding: 12px 16px; text-align: left;
+      font-weight: 600; font-size: 0.72rem; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--text-mid);
+    }
+    tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.15s; }
+    tbody tr:hover { background: rgba(255,255,255,0.04); }
+    td { padding: 12px 16px; color: var(--text-hi); }
+
+    /* ── NO DATA ───────────────────────────────────────────────────────── */
+    .no-data {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 300px; gap: 12px;
+      color: var(--text-mid); font-size: 0.9rem;
+    }
+    .no-data-icon { font-size: 3rem; opacity: 0.4; }
+
+    /* ── FOOTER ────────────────────────────────────────────────────────── */
+    footer {
+      text-align: center; margin-top: 64px;
+      font-size: 0.75rem; color: var(--text-lo);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="bg-blobs">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <div class="wrapper">
+
+    <!-- ── HEADER ──────────────────────────────────────────────────────── -->
+    <header>
+      <div class="brand">
+        <div class="brand-icon">🚕</div>
+        <div class="brand-text">
+          <h1>NYC Taxi Analytics</h1>
+          <p>Big Data Pipeline · Apache Hive + Spark</p>
+        </div>
+      </div>
+      <div class="live-badge">
+        <span class="live-dot"></span>
+        Live · Queries Hive on every load
+      </div>
+    </header>
+
+    <!-- ── KPI STAT CARDS ───────────────────────────────────────────────── -->
+    <div class="kpi-grid">
+      <div class="kpi-card c1">
+        <div class="kpi-icon">🚖</div>
+        <div class="kpi-label">Total Trips</div>
+        <div class="kpi-value">{{ total_trips }}</div>
+      </div>
+      <div class="kpi-card c2">
+        <div class="kpi-icon">💰</div>
+        <div class="kpi-label">Total Revenue</div>
+        <div class="kpi-value">{{ total_revenue }}</div>
+      </div>
+      <div class="kpi-card c3">
+        <div class="kpi-icon">🧾</div>
+        <div class="kpi-label">Avg Fare</div>
+        <div class="kpi-value">{{ avg_fare }}</div>
+      </div>
+      <div class="kpi-card c4">
+        <div class="kpi-icon">⏱️</div>
+        <div class="kpi-label">Avg Trip Duration</div>
+        <div class="kpi-value">{{ avg_duration }}</div>
+      </div>
+    </div>
+
+    <!-- ── CHARTS ───────────────────────────────────────────────────────── -->
+    <div class="charts-grid">
+
+      <!-- Row 1: Trips by hour (full width) -->
+      <div class="card chart-card">
+        {% if chart_trips_hour %}
+          <div id="chart-trips-hour" class="plotly-chart"></div>
+        {% else %}
+          <div class="no-data"><span class="no-data-icon">📭</span>No trips-per-hour data yet — run the Spark ETL first.</div>
+        {% endif %}
+      </div>
+
+      <!-- Row 2: Daily revenue (full width) -->
+      <div class="card chart-card">
+        {% if chart_daily_rev %}
+          <div id="chart-daily-rev" class="plotly-chart"></div>
+        {% else %}
+          <div class="no-data"><span class="no-data-icon">📭</span>No revenue data yet.</div>
+        {% endif %}
+      </div>
+
+      <!-- Row 3: Pickup zones + Payment pie -->
+      <div class="charts-row-2">
+        <div class="card chart-card">
+          {% if chart_zones %}
+            <div id="chart-zones" class="plotly-chart"></div>
+          {% else %}
+            <div class="no-data"><span class="no-data-icon">📭</span>No pickup zone data yet.</div>
+          {% endif %}
+        </div>
+        <div class="card chart-card">
+          {% if chart_payment_pie %}
+            <div id="chart-payment-pie" class="plotly-chart"></div>
+          {% else %}
+            <div class="no-data"><span class="no-data-icon">📭</span>No payment data yet.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Row 4: Revenue by payment method (full width) -->
+      <div class="card chart-card">
+        {% if chart_payment_rev %}
+          <div id="chart-payment-rev" class="plotly-chart"></div>
+        {% else %}
+          <div class="no-data"><span class="no-data-icon">📭</span>No payment revenue data yet.</div>
+        {% endif %}
+      </div>
+
+    </div><!-- /charts-grid -->
+
+    <!-- ── MONTHLY SUMMARY TABLE ────────────────────────────────────────── -->
+    <div class="section-heading">📅 Monthly Summary</div>
+    <div class="card">
+      {% if monthly_table %}
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                {% for col in monthly_columns %}
+                  <th>{{ col.replace("_", " ").title() }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in monthly_table %}
+                <tr>
+                  {% for col in monthly_columns %}
+                    <td>{{ row[col] }}</td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="no-data"><span class="no-data-icon">📭</span>No monthly data yet — run the Spark ETL first.</div>
+      {% endif %}
+    </div>
+
+    <footer>
+      NYC Taxi Big Data Pipeline · Flask + Apache Hive + Spark · Data refreshes on every page load
+    </footer>
+
+  </div><!-- /wrapper -->
+
+  <!-- ── PLOTLY RENDER ─────────────────────────────────────────────────── -->
+  <script>
+    const config = { responsive: true, displayModeBar: false };
+
+    {% if chart_trips_hour %}
+      Plotly.newPlot('chart-trips-hour', {{ chart_trips_hour | safe }}.data, {{ chart_trips_hour | safe }}.layout, config);
+    {% endif %}
+
+    {% if chart_daily_rev %}
+      Plotly.newPlot('chart-daily-rev', {{ chart_daily_rev | safe }}.data, {{ chart_daily_rev | safe }}.layout, config);
+    {% endif %}
+
+    {% if chart_zones %}
+      Plotly.newPlot('chart-zones', {{ chart_zones | safe }}.data, {{ chart_zones | safe }}.layout, config);
+    {% endif %}
+
+    {% if chart_payment_pie %}
+      Plotly.newPlot('chart-payment-pie', {{ chart_payment_pie | safe }}.data, {{ chart_payment_pie | safe }}.layout, config);
+    {% endif %}
+
+    {% if chart_payment_rev %}
+      Plotly.newPlot('chart-payment-rev', {{ chart_payment_rev | safe }}.data, {{ chart_payment_rev | safe }}.layout, config);
+    {% endif %}
+  </script>
+
+</body>
+</html>
